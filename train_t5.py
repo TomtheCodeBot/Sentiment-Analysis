@@ -18,7 +18,7 @@ from models.loss import *
 from models.metrics import *
 from models.pipeline import *
 from models.utils import *
-from models.BARTABSA import *
+from models.T5ABSA import *
 
 
 # fitlog.debug()
@@ -31,24 +31,25 @@ opinion_first = False
 length_penalty = 1.0
 
 decoder_type = 'avg_score'
-bart_name = 'facebook/bart-base'
+t5_name = 't5-base'
 use_encoder_mlp = 1
 
 dataset = "laptop"
 
 demo = False
-model_path = "output_model/LaptopACOS"
+model_path = "output_model/t5/LaptopACOS"
 
 if __name__ =="__main__":
 
+    demo = False
     if demo:
-        cache_fn = f"caches/data_{bart_name}_{dataset_name}_{opinion_first}_demo.pt"
+        cache_fn = f"caches/data_{t5_name}_{dataset_name}_{opinion_first}_demo.pt"
     else:
-        cache_fn = f"caches/data_{bart_name}_{dataset_name}_{opinion_first}.pt"
+        cache_fn = f"caches/data_{t5_name}_{dataset_name}_{opinion_first}.pt"
 
     @cache_results(cache_fn, _refresh=False)
     def get_data():
-        pipe = BartBPEABSAPipe(tokenizer=bart_name, opinion_first=opinion_first,dataset=dataset)
+        pipe = T5BPEABSAPipe(tokenizer=t5_name, opinion_first=opinion_first)
         data_bundle = pipe.process_from_file(f'LaptopACOS/json', demo=demo)
         return data_bundle, pipe.tokenizer, pipe.mapping2id, pipe.mapping2targetid
 
@@ -65,9 +66,6 @@ if __name__ =="__main__":
         'pengb/16res': 1.2
     }[dataset_name]
 
-    print("The number of tokens in tokenizer ", len(tokenizer.decoder))
-
-
     idtarget2map=inv_map = {v: k for k, v in mapping2targetid.items()}
 
     bos_token_id = 0  #
@@ -76,15 +74,15 @@ if __name__ =="__main__":
     vocab_size = len(tokenizer)
 
 
-    #model = BartSeq2SeqModel.build_model(bart_name, tokenizer, label_ids=label_ids, decoder_type=decoder_type,
-    #                                    copy_gate=False, use_encoder_mlp=use_encoder_mlp, use_recur_pos=False)
-    #print(vocab_size, model.decoder.decoder.embed_tokens.weight.data.size(0))
-    #model = SequenceGeneratorModel(model, bos_token_id=bos_token_id,
-    #                            eos_token_id=eos_token_id,
-    #                            max_length=max_len, max_len_a=max_len_a,num_beams=num_beams, do_sample=False,
-    #                            repetition_penalty=1, length_penalty=length_penalty, pad_token_id=eos_token_id,
-    #                            restricter=None)
-    model = torch.load("/home/student/Sentiment-Analysis/output_model/LaptopACOS/best_SequenceGeneratorModel_quad_f_2022-07-02-04-03-29-755703")
+    model = T5Seq2SeqModel.build_model(t5_name, tokenizer, label_ids=label_ids, decoder_type=decoder_type,
+                                        copy_gate=False, use_encoder_mlp=use_encoder_mlp, use_recur_pos=False)
+    print(vocab_size, model.decoder.decoder.embed_tokens.weight.data.size(0))
+    model = SequenceGeneratorModel(model, bos_token_id=bos_token_id,
+                                eos_token_id=eos_token_id,
+                                max_length=max_len, max_len_a=max_len_a,num_beams=num_beams, do_sample=False,
+                                repetition_penalty=1, length_penalty=length_penalty, pad_token_id=eos_token_id,
+                                restricter=None)
+    #model = torch.load("/home/student/Sentiment-Analysis/output_model/LaptopACOS/best_SequenceGeneratorModel_quad_f_2022-07-02-04-03-29-755703")
     if torch.cuda.is_available():
         # device = list([i for i in range(torch.cuda.device_count())])
         device = 'cuda'
