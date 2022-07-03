@@ -23,7 +23,7 @@ class FBartEncoder(Seq2SeqEncoder):
 
 
 class FBartDecoder(Seq2SeqDecoder):
-    def __init__(self, decoder, pad_token_id, label_ids, use_encoder_mlp=True):
+    def __init__(self, decoder, pad_token_id, label_ids, use_encoder_mlp=True,use_last_layer_attention=False):
         super().__init__()
         assert isinstance(decoder, BartDecoder)
         self.decoder = decoder
@@ -38,6 +38,15 @@ class FBartDecoder(Seq2SeqDecoder):
         self.register_buffer('mapping', mapping)
         self.src_start_index = len(mapping)  # 加上一个
         hidden_size = decoder.embed_tokens.weight.size(1)
+        if use_last_layer_attention:
+            self.encoder_attention = nn.Sequential(nn.Linear(hidden_size, hidden_size//2),
+                                             nn.Dropout(0.3),
+                                             nn.ReLU(),
+                                             nn.Linear(hidden_size//2, 64))
+            self.decoder_attention = nn.Sequential(nn.Linear(hidden_size, hidden_size//2),
+                                             nn.Dropout(0.3),
+                                             nn.ReLU(),
+                                             nn.Linear(hidden_size//2, 64))
         if use_encoder_mlp:
             self.encoder_mlp = nn.Sequential(nn.Linear(hidden_size, hidden_size),
                                              nn.Dropout(0.3),
@@ -90,6 +99,9 @@ class FBartDecoder(Seq2SeqDecoder):
                                 use_cache=True,
                                 return_dict=True)
         hidden_state = dict.last_hidden_state  # bsz x max_len x hidden_size
+        if hasattr(self,"decoder_attention"):
+            hidden_state = self.decoder_attention(hidden_state)
+
         if not self.training:
             state.past_key_values = dict.past_key_values
 
@@ -97,14 +109,20 @@ class FBartDecoder(Seq2SeqDecoder):
                                        fill_value=-1e24)
 
         # first get the
-        eos_scores = F.linear(hidden_state, self.decoder.embed_tokens.weight[2:3])  # bsz x max_len x 1
-        tag_scores = F.linear(hidden_state, self.decoder.embed_tokens.weight[self.label_start_id:self.label_end_id])  # bsz x max_len x num_class
+        if hasattr(self,"encoder_attention"):
+            eos_scores = F.linear(hidden_state, self.encoder_attention(self.decoder.embed_tokens.weight[2:3]))  # bsz x max_len x 1
+            tag_scores = F.linear(hidden_state, self.encoder_attention(self.decoder.embed_tokens.weight[self.label_start_id:self.label_end_id]))  # bsz x max_len x num_class
+        else:
+            eos_scores = F.linear(hidden_state, self.decoder.embed_tokens.weight[2:3])  # bsz x max_len x 1
+            tag_scores = F.linear(hidden_state, self.decoder.embed_tokens.weight[self.label_start_id:self.label_end_id])  # bsz x max_len x num_class
 
         # bsz x max_word_len x hidden_size
         src_outputs = state.encoder_output
 
         if hasattr(self, 'encoder_mlp'):
             src_outputs = self.encoder_mlp(src_outputs)
+        if hasattr(self,"encoder_attention"):
+            src_outputs = self.encoder_attention(src_outputs)
 
         if first is not None:
             mask = first.eq(0)  # bsz x 1 x max_word_len, 为1的地方是padding
@@ -128,8 +146,8 @@ class FBartDecoder(Seq2SeqDecoder):
 
 class CaGFBartDecoder(FBartDecoder):
     # Copy and generate,
-    def __init__(self, decoder, pad_token_id, label_ids, use_encoder_mlp=False):
-        super().__init__(decoder, pad_token_id, label_ids, use_encoder_mlp=use_encoder_mlp)
+    def __init__(self, decoder, pad_token_id, label_ids, use_encoder_mlp=False,use_last_layer_attention=False):
+        super().__init__(decoder, pad_token_id, label_ids, use_encoder_mlp=use_encoder_mlp,use_last_layer_attention=use_last_layer_attention)
 
     def forward(self, tokens, state):
         encoder_outputs = state.encoder_output
@@ -174,14 +192,21 @@ class CaGFBartDecoder(FBartDecoder):
                                 use_cache=True,
                                 return_dict=True)
         hidden_state = dict.last_hidden_state  # bsz x max_len x hidden_size
+        if hasattr(self,"decoder_attention"):
+            hidden_state = self.decoder_attention(hidden_state)
+
         if not self.training:
             state.past_key_values = dict.past_key_values
 
         logits = hidden_state.new_full((hidden_state.size(0), hidden_state.size(1), self.src_start_index+src_tokens.size(-1)),
                                        fill_value=-1e24)
 
-        eos_scores = F.linear(hidden_state, self.decoder.embed_tokens.weight[2:3])  # bsz x max_len x 1
-        tag_scores = F.linear(hidden_state, self.decoder.embed_tokens.weight[self.label_start_id:self.label_end_id])  # bsz x max_len x num_class
+        if hasattr(self,"encoder_attention"):
+            eos_scores = F.linear(hidden_state, self.encoder_attention(self.decoder.embed_tokens.weight[2:3]))  # bsz x max_len x 1
+            tag_scores = F.linear(hidden_state, self.encoder_attention(self.decoder.embed_tokens.weight[self.label_start_id:self.label_end_id]))  # bsz x max_len x num_class
+        else:
+            eos_scores = F.linear(hidden_state, self.decoder.embed_tokens.weight[2:3])  # bsz x max_len x 1
+            tag_scores = F.linear(hidden_state, self.decoder.embed_tokens.weight[self.label_start_id:self.label_end_id])  # bsz x max_len x num_class
 
 
         # bsz x max_bpe_len x hidden_size
@@ -198,6 +223,11 @@ class CaGFBartDecoder(FBartDecoder):
             # src_outputs = self.decoder.embed_tokens(src_tokens)
         mask = mask.unsqueeze(1)
         input_embed = self.decoder.embed_tokens(src_tokens)  # bsz x max_word_len x hidden_size
+
+        if hasattr(self,"encoder_attention"):
+            src_outputs = self.encoder_attention(src_outputs)
+            input_embed = self.encoder_attention(input_embed)
+        
         word_scores = torch.einsum('blh,bnh->bln', hidden_state, src_outputs)  # bsz x max_len x max_word_len
         gen_scores = torch.einsum('blh,bnh->bln', hidden_state, input_embed)  # bsz x max_len x max_word_len
         word_scores = (gen_scores + word_scores)/2
@@ -214,7 +244,7 @@ class CaGFBartDecoder(FBartDecoder):
 class BartSeq2SeqModel(Seq2SeqModel):
     @classmethod
     def build_model(cls, bart_model, tokenizer, label_ids, decoder_type=None, copy_gate=False,
-                    use_encoder_mlp=False, use_recur_pos=False, tag_first=False):
+                    use_encoder_mlp=False,use_last_layer_attention=False, use_recur_pos=False, tag_first=False):
         model = BartModel.from_pretrained(bart_model)
         num_tokens, _ = model.encoder.embed_tokens.weight.shape
         model.resize_token_embeddings(len(tokenizer.unique_no_split_tokens)+num_tokens)
@@ -247,7 +277,7 @@ class BartSeq2SeqModel(Seq2SeqModel):
             decoder = FBartDecoder(decoder, pad_token_id=tokenizer.pad_token_id, label_ids=label_ids)
         elif decoder_type =='avg_score':
             decoder = CaGFBartDecoder(decoder, pad_token_id=tokenizer.pad_token_id, label_ids=label_ids,
-                                              use_encoder_mlp=use_encoder_mlp)
+                                              use_encoder_mlp=use_encoder_mlp,use_last_layer_attention=use_last_layer_attention)
         else:
             raise RuntimeError("Unsupported feature.")
 

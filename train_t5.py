@@ -24,8 +24,8 @@ from models.T5ABSA import *
 # fitlog.debug()
 lr = 5e-5
 n_epochs = 100
-batch_size = 20
-num_beams = 4
+batch_size = 10
+num_beams = 1
 dataset_name = 'pengb/16res'
 opinion_first = False
 length_penalty = 1.0

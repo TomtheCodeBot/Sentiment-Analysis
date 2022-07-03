@@ -24,7 +24,7 @@ from models.BARTABSA import *
 # fitlog.debug()
 lr = 5e-5
 n_epochs = 100
-batch_size = 20
+batch_size = 10
 num_beams = 4
 dataset_name = 'pengb/16res'
 opinion_first = False
@@ -32,12 +32,13 @@ length_penalty = 1.0
 
 decoder_type = 'avg_score'
 bart_name = 'facebook/bart-base'
-use_encoder_mlp = 1
+use_encoder_mlp = True
+use_last_layer_attention = True
 
 dataset = "laptop"
 
 demo = False
-model_path = "output_model/LaptopACOS"
+model_path = "output_model/bart/LaptopACOS"
 
 if __name__ =="__main__":
 
@@ -76,15 +77,15 @@ if __name__ =="__main__":
     vocab_size = len(tokenizer)
 
 
-    #model = BartSeq2SeqModel.build_model(bart_name, tokenizer, label_ids=label_ids, decoder_type=decoder_type,
-    #                                    copy_gate=False, use_encoder_mlp=use_encoder_mlp, use_recur_pos=False)
-    #print(vocab_size, model.decoder.decoder.embed_tokens.weight.data.size(0))
-    #model = SequenceGeneratorModel(model, bos_token_id=bos_token_id,
-    #                            eos_token_id=eos_token_id,
-    #                            max_length=max_len, max_len_a=max_len_a,num_beams=num_beams, do_sample=False,
-    #                            repetition_penalty=1, length_penalty=length_penalty, pad_token_id=eos_token_id,
-    #                            restricter=None)
-    model = torch.load("/home/student/Sentiment-Analysis/output_model/LaptopACOS/best_SequenceGeneratorModel_quad_f_2022-07-02-04-03-29-755703")
+    model = BartSeq2SeqModel.build_model(bart_name, tokenizer, label_ids=label_ids, decoder_type=decoder_type,
+                                        copy_gate=False, use_encoder_mlp=use_encoder_mlp,use_last_layer_attention=use_last_layer_attention, use_recur_pos=False)
+    print(vocab_size, model.decoder.decoder.embed_tokens.weight.data.size(0))
+    model = SequenceGeneratorModel(model, bos_token_id=bos_token_id,
+                                eos_token_id=eos_token_id,
+                                max_length=max_len, max_len_a=max_len_a,num_beams=num_beams, do_sample=False,
+                                repetition_penalty=1, length_penalty=length_penalty, pad_token_id=eos_token_id,
+                                restricter=None)
+    #model = torch.load("/home/student/Sentiment-Analysis/output_model/LaptopACOS/best_SequenceGeneratorModel_quad_f_2022-07-02-04-03-29-755703")
     if torch.cuda.is_available():
         # device = list([i for i in range(torch.cuda.device_count())])
         device = 'cuda'
